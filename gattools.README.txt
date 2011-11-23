@@ -1,0 +1,82 @@
+Gatling Tools - bamstat and readPairCluster
+Center for Human Genetic Research
+Massachusetts General Hospital
+Adrian Heilbut
+<heilbut@chgr.mgh.harvard.edu>
+
+
+---------------------------------------
+Bamstat and readPairCluster are a pair of simple utilities for processing 
+BAM alignments to extract statistics and find clusters of aberrant read pairs 
+that may indicate SVs.
+
+Requires:
+  samtools - available from http://samtools.sourceforge.net/
+
+---------------------------------------
+Reference
+
+"Next-generation sequencing strategies enable routine detection of balanced
+chromosome rearrangements for clinical diagnostics and genetic research."  
+Talkowski ME, Ernst C, Heilbut A, Chiang C, Hanscom C, Lindgren A, Kirby A,
+Liu S, Muddukrishna B, Ohsumi TK, Shen Y, Borowsky M, Daly MJ, Morton CC, Gusella JF.
+Am J Hum Genet. 2011 Apr 8;88(4):469-81 http://www.ncbi.nlm.nih.gov/pubmed/21473983
+
+--------------------------------------
+Usage
+
+- The input is a BAM file of alignments of paired-end or mate-pair reads.  
+For mate-pair data, we typically use either Maq or Novoalign for mapping.  
+
+- The input BAM file for bamstat must be sorted by read name, which can be done with samtools
+> samtools sort -n input.bam input.sorted
+
+- Given a sorted file, run bamstat:
+> bamstat -b -i input.sorted.bam
+
+Bamstat generates a number of files including some summary statistics.  One caveat with the
+statistics is that bamstat only knows about data that is contained in the bam file.  
+Some aligners (ie. Maq) do not include read pairs for which neither end was mapped in their 
+output, so to get accurate statistics on the number of reads mapped one should use the 
+actual total number of reads from the original fastq.
+
+Lists of reads for which one or both ends were unmapped are written to 
+
+Bamstat also write out tab-delimited text files containing the aberrant read pairs 
+representing potential inversions, deletions, and translocations: deletionPairs.txt, 
+inversionPairs.txt, and translocPairs.txt.  These are like SAM files except the two reads are 
+both on the same line (the reads on a line are in order of their mapped chromosome location).  
+Corresponding BAM files are also written out.
+
+Prior to clustering, each of these *Pairs.txt files must be sorted by 
+chromosome and position, using gnu sort:
+
+> sort -k2,2 -k5,5 -k3n,3n translocPairs.txt > transloc.sorted.txt
+> sort -k2,2 -k5,5 -k3n,3n inversionPairs.txt > inversion.sorted.txt
+> sort -k2,2 -k5,5 -k3n,3n deletionPairs.txt > deletion.sorted.txt
+
+The sorted pairs file are used as input to readPairCluster:
+
+> readPairCluster -r transloc.sorted.txt -q 10 -d 5000 -s 3 -u > transloc_10.clusters
+
+- the -q parameter is a threshold for mapping quality.  Only reads with scores strictly
+ greater than the value specified will be included in clusters
+
+- the -d parameter specifies the clustering distance.  For any given pair of read-pairs,
+corresponding ends must fall within that distance for the read-pairs to be clustered together.
+
+- s specifies the minimum cluster size to output (default 3)
+
+- u will filter completely redundant read pairs (those for which each of the ends map
+to the exact same locations)
+
+The output from readPairCluster is a list of read pairs, each assigned to a cluster.  
+This file will typically require a significant amount of additional filtering (eg. 
+by cluster size, insert size, orientation constraints, prior knowledge of karyotype) to 
+identify real events, depending on what you're looking for.
+
+The format of the clustering output file is:
+
+clusterid clustersize readname chrA chrB posA posB scoreA scoreB lenA lenB flagA flagB seqA seqB qualA qualB
+
+
