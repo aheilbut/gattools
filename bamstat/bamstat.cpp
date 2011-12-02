@@ -39,12 +39,14 @@ char * concat(const char * strA,  const char * strB) {
 
 // print out read pair onto a single line, suitable for sorting and clustering 
 // always print pairs in order of the chromosomes
-int printPair(std::ofstream &outputStream, samfile_t *samfile, bam1_t *rec1, bam1_t *rec2) {
+int printPair(std::ofstream &outputStream, samfile_t *samfile, bam1_t *rec1, bam1_t *rec2, bool printRG, char *defaultRG) { 
   uint8_t *s = bam1_seq(rec1), *t = bam1_qual(rec1);
   int i = 0;
 
   bam1_t *tmp1;
-  
+  uint8_t *auxdata;
+  char * readgroup;
+
   // swap order of pairs if necessary
   if (rec1->core.tid < rec2->core.tid || (rec1->core.tid == rec2->core.tid && rec1->core.pos < rec2->core.pos) ) {
     rec1 = rec1; rec2 = rec2;
@@ -52,29 +54,45 @@ int printPair(std::ofstream &outputStream, samfile_t *samfile, bam1_t *rec1, bam
     tmp1 = rec1; rec1 = rec2;  rec2 = tmp1;
   }
   
+  if (printRG) {
+    auxdata = bam_aux_get(rec1, "RG");
+    if (auxdata != 0) {
+      readgroup = bam_aux2Z(auxdata);
+    } else {
+      readgroup = defaultRG;
+    }
+    outputStream << readgroup << "\t";
+  }
+
   if (rec1->core.tid != -1 && rec2->core.tid != -1) {
     outputStream
       << bam1_qname(rec1) << "\t"                                            
-      << samfile->header->target_name[rec1->core.tid] << "\t" << rec1->core.pos << "\t" << rec1->core.flag << "\t"      
-      << samfile->header->target_name[rec2->core.tid] << "\t" << rec2->core.pos << "\t" << rec2->core.flag << "\t"       
-      << rec1->core.l_qseq << "\t" << rec1->core.qual << "\t";
-    outputStream << rec2->core.l_qseq << "\t" << rec2->core.qual << "\t";
+      << samfile->header->target_name[rec1->core.tid] 
+      << "\t" << rec1->core.pos
+      << "\t" << rec1->core.flag
+      << "\t" << samfile->header->target_name[rec2->core.tid] 
+      << "\t" << rec2->core.pos
+      << "\t" << rec2->core.flag
+      << "\t" << rec1->core.l_qseq
+      << "\t" << rec1->core.qual 
+      << "\t" << rec2->core.l_qseq
+      << "\t" << rec2->core.qual << "\t";
 
+    // seq A
     s = bam1_seq(rec1); t = bam1_qual(rec1);
     for(i = 0; i < rec1->core.l_qseq; ++i) {
       outputStream << bam_nt16_rev_table[bam1_seqi(s, i)];
-	}
+    }
     outputStream << "\t";
 
     // qual A
-    if (t[0] == 0xff) {
-      outputStream << "*";
-    }                                                                                                                             
+    if (t[0] == 0xff) { outputStream << "*";  }                                                                   
     else for (i = 0; i < rec1->core.l_qseq; ++i) {
 	outputStream << (char) (t[i] + 33);    
       }
     outputStream << "\t";
-
+    
+    // seq B
     s = bam1_seq(rec2); t = bam1_qual(rec2);
     for (i = 0; i < rec2->core.l_qseq; ++i) {
       outputStream << bam_nt16_rev_table[bam1_seqi(s, i)];
@@ -263,7 +281,7 @@ int printUsage() {
     std::cout << "bamstat - read statistics and extraction - ";
     std::cout << "MGH CHGR <heilbut@chgr.mgh.harvard.edu> " << std::endl;
     std::cout << "bamstat usage:" << std::endl;
-    std::cout << "bamstats -i <inputfile> -o <outputdir>  [-b] [-u] " << std::endl;
+    std::cout << "bamstats -i <inputfile> -o <outputdir>  [-b] [-u] [-g DefaultRG] " << std::endl;
     //    std::cout << "[-ha min max numbins]" << std::endl;
     return 0;
 
@@ -289,6 +307,9 @@ int main(int argc, char **argv) {
  int c;
  bool OPT_BAMinput = false;
  bool OPT_writeUnmapped = false;
+ bool OPT_printRGinfo = false;  // by default, don't print out read group identifier
+ char * defaultRG = 0;
+
  bool somethingNotMapped = false;
 
  long sampleCount = 0;
@@ -303,7 +324,7 @@ int main(int argc, char **argv) {
  RunningStat samplestat_shortReads; 
 
  // get command line options
- while ((c = getopt(argc, argv,"i:buo:s:")) != -1) {
+ while ((c = getopt(argc, argv,"i:buo:s:g:")) != -1) {
     switch (c)
       {
       case 'i':
@@ -325,6 +346,9 @@ int main(int argc, char **argv) {
       case 's':
 	INDEL_THRESHOLD = atof(optarg);
 	break;
+      case 'g':
+	OPT_printRGinfo = true;
+	defaultRG = optarg;
       }
  } 
  
@@ -509,7 +533,7 @@ int main(int argc, char **argv) {
            stats.putative_RF_deletions++;
 	   samwrite(fpDeletions, rec1);
 	   samwrite(fpDeletions, rec2);
-	   printPair(deletionPairs, samfile, rec1, rec2);
+	   printPair(deletionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
          } 
          
          }
@@ -524,7 +548,7 @@ int main(int argc, char **argv) {
            stats.putative_RF_deletions++;
 	       samwrite(fpDeletions, rec1);
     	   samwrite(fpDeletions, rec2);
-	       printPair(deletionPairs, samfile, rec1, rec2);
+	   printPair(deletionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
          } 
         }
        }
@@ -539,7 +563,7 @@ int main(int argc, char **argv) {
          // if isize is bigger than INDEL_THRESHOLD x sampled stddev, output the reads as potential deletions
          if (rec1->core.isize > samplestat_shortReads.Mean() + INDEL_THRESHOLD * samplestat_shortReads.StandardDeviation()) {
            stats.putative_FR_deletions++;
-           samwrite(fpDeletions, rec1);                                                                                                
+           samwrite(fpDeletions, rec1);
            samwrite(fpDeletions, rec2); 
          } 
 
@@ -553,7 +577,7 @@ int main(int argc, char **argv) {
          // if isize is bigger than INDEL_THRESHOLD x sampled stddev, output the reads as potential deletions
          if (rec2->core.isize > samplestat_shortReads.Mean() + INDEL_THRESHOLD * samplestat_shortReads.StandardDeviation()) {
            stats.putative_FR_deletions++;
-           samwrite(fpDeletions, rec1);                                                                                                
+           samwrite(fpDeletions, rec1);                      
            samwrite(fpDeletions, rec2); 
          } 
 
@@ -574,7 +598,7 @@ int main(int argc, char **argv) {
 	   samwrite(fpDeletions, rec1);
 	   samwrite(fpDeletions, rec2);
 
-	   printPair(deletionPairs, samfile, rec1, rec2);
+	   printPair(deletionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
          } 
         }
         
@@ -587,7 +611,7 @@ int main(int argc, char **argv) {
 	   samwrite(fpDeletions, rec1);
 	   samwrite(fpDeletions, rec2);
 
-	   printPair(deletionPairs, samfile, rec1, rec2);
+	   printPair(deletionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
          } 
         }  
       }
@@ -607,7 +631,7 @@ int main(int argc, char **argv) {
 	   samwrite(fpDeletions, rec1);
 	   samwrite(fpDeletions, rec2);
 
-	   printPair(deletionPairs, samfile, rec1, rec2);
+	   printPair(deletionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
 
          }
         } 
@@ -623,12 +647,11 @@ int main(int argc, char **argv) {
 	   samwrite(fpDeletions, rec1);
 	   samwrite(fpDeletions, rec2);
 
-	   printPair(deletionPairs, samfile, rec1, rec2);
+	   printPair(deletionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
 
          }
         }
       }
-
     }
     
 
@@ -642,7 +665,7 @@ int main(int argc, char **argv) {
       samwrite(fpTranslocations, rec2);
      
       if (rec1->core.tid != -1 && rec2->core.tid != -1) { 
-    	printPair(translocPairs, samfile, rec1, rec2);
+    	printPair(translocPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
 
 	}
 
@@ -677,7 +700,7 @@ int main(int argc, char **argv) {
 
           // write out read pair tab-delimited text file for clustering input
           //      writeDL(f_chimericPair, [a.qname, a.rname, a.pos, a.flag, b.rname, b.pos, b.flag, len(a.seq), a.mapq, len(b.seq), b.mapq])
-          printPair(translocPairs, samfile, rec1, rec2);
+          printPair(translocPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
     
         } else {
           // it's a possible inversion, which will look like a deletion but have wrong orientation
@@ -685,14 +708,14 @@ int main(int argc, char **argv) {
           
           // for now, it's an inversion if both reads map to the same strand
           if (testFlag(rec1->core.flag, BAM_FREVERSE) == testFlag(rec2->core.flag, BAM_FREVERSE)) { 
-             printPair(inversionPairs, samfile, rec1, rec2);
+	    printPair(inversionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
           }
           
           // deletion
           else {
 	    // it's a possible deletion, check if insert size is greater than 2 times std dev
 	    if (rec1->core.isize > samplestat_longReads.Mean() + INDEL_THRESHOLD * samplestat_longReads.StandardDeviation()) {
-	      printPair(deletionPairs, samfile, rec1, rec2);
+	      printPair(deletionPairs, samfile, rec1, rec2, OPT_printRGinfo, defaultRG);
 	      samwrite(fpDeletions, rec1);
 	      samwrite(fpDeletions, rec2);
 	    }

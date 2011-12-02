@@ -19,6 +19,7 @@ public:
   void print();
 
   // to keep things simple, all of these are left public
+  string readgroupName;
   string readID;
   string chrA;
   string chrB;

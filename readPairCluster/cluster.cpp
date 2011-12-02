@@ -55,7 +55,10 @@ list<readPair *> * readFile(string filename) {
     
     if (v->size() > 0) { 
       readPair *rp = new readPair(*v);
-      if (prev == NULL || !(prev->chrA == rp->chrA && prev->chrB == rp->chrB && prev->posA == rp->posA && prev->posB == rp->posB))
+      if (prev == NULL || !(prev->chrA == rp->chrA 
+			    && prev->chrB == rp->chrB
+			    && prev->posA == rp->posA
+			    && prev->posB == rp->posB))
       newList->push_back(rp);
       prev = rp;
       
@@ -120,9 +123,14 @@ int getReadPairGroup (ifstream &f, long &startLoc, list<readPair* > ** dL, long 
       }
       delete v;
 
-      if (prev == NULL || !(prev->chrA == rp->chrA && prev->chrB == rp->chrB && prev->posA == rp->posA && prev->posB == rp->posB)) {
+      if (prev == NULL || !(prev->chrA == rp->chrA && 
+			    prev->chrB == rp->chrB && 
+			    prev->posA == rp->posA && 
+			    prev->posB == rp->posB)) {
   	// if it is within bounds, then add it to the list
-  	if (prev == NULL || (prev->chrA == rp->chrA && prev->chrB == rp->chrB && ((rp->posA - prev->posA) < DIST_CUTOFF) )) {
+  	if (prev == NULL || (prev->chrA == rp->chrA 
+			     && prev->chrB == rp->chrB
+			     && ((rp->posA - prev->posA) < DIST_CUTOFF) )) {
   	  newList->push_back(rp);
   	  prev = rp;
   	}
